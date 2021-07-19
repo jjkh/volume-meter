@@ -12,7 +12,7 @@ fn release(com_obj: anytype) void {
     _ = com_obj.IUnknown_Release();
 }
 
-fn get_default_audio_output_device() !*core_audio.IMMDevice {
+fn getDefaultAudioOutputDevice() !*core_audio.IMMDevice {
     var device_enumerator: *core_audio.IMMDeviceEnumerator = undefined;
     {
         const result = com.CoCreateInstance(
@@ -47,14 +47,14 @@ fn get_default_audio_output_device() !*core_audio.IMMDevice {
     return device;
 }
 
-fn wide_string_z(wide_str: [*:0]u16) [:0]u16 {
+fn wideStringZ(wide_str: [*:0]u16) [:0]u16 {
     var idx: usize = 0;
     while (wide_str[idx] != 0) : (idx += 1) {}
 
     return wide_str[0..idx :0];
 }
 
-fn get_friendly_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
+fn getFriendlyName(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
     var properties: *properties_system.IPropertyStore = undefined;
     {
         const result = device.IMMDevice_OpenPropertyStore(structured_storage.STGM_READ, &properties);
@@ -76,13 +76,13 @@ fn get_friendly_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
     }
     defer _ = structured_storage.PropVariantClear(&prop_value);
 
-    const wide_name = wide_string_z(prop_value.Anonymous.Anonymous.Anonymous.pwszVal);
+    const wide_name = wideStringZ(prop_value.Anonymous.Anonymous.Anonymous.pwszVal);
     const name_len = try std.unicode.utf16leToUtf8(buf, wide_name);
 
     return buf[0..name_len];
 }
 
-fn get_audio_meter_info(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioMeterInformation {
+fn getAudioMeterInfo(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioMeterInformation {
     var audio_meter_info: *core_audio.IAudioMeterInformation = undefined;
     {
         const result = audio_endpoint.IMMDevice_Activate(
@@ -99,7 +99,7 @@ fn get_audio_meter_info(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAud
     return audio_meter_info;
 }
 
-fn get_endpoint_volume(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioEndpointVolume {
+fn getEndpointVolume(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioEndpointVolume {
     var endpoint_volume: *core_audio.IAudioEndpointVolume = undefined;
     {
         const result = audio_endpoint.IMMDevice_Activate(
@@ -116,7 +116,7 @@ fn get_endpoint_volume(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudi
     return endpoint_volume;
 }
 
-fn get_peak_volume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
+fn getPeakVolume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
     var peak_volume: f32 = undefined;
     {
         const result = audio_meter_info.IAudioMeterInformation_GetPeakValue(&peak_volume);
@@ -128,7 +128,7 @@ fn get_peak_volume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
     return peak_volume;
 }
 
-fn get_master_volume_scalar(endpoint_volume: *core_audio.IAudioEndpointVolume) !f32 {
+fn getMasterVolumeScalar(endpoint_volume: *core_audio.IAudioEndpointVolume) !f32 {
     var master_volume_scalar: f32 = undefined;
     {
         const result = endpoint_volume.IAudioEndpointVolume_GetMasterVolumeLevelScalar(&master_volume_scalar);
@@ -140,7 +140,7 @@ fn get_master_volume_scalar(endpoint_volume: *core_audio.IAudioEndpointVolume) !
     return master_volume_scalar;
 }
 
-fn render_volume_bars(peak_volume: f32, master_volume: f32) void {
+fn renderVolumeBars(peak_volume: f32, master_volume: f32) void {
     const volume_bar = "|" ** 50;
     std.debug.print("\x1b[1F[ {s:<50} ]\x1b[1E[ {s:<50} ]", .{
         volume_bar[0..@floatToInt(u8, peak_volume * 50.0)],
@@ -159,26 +159,26 @@ pub fn main() !void {
     }
     defer com.CoUninitialize();
 
-    var audio_device = try get_default_audio_output_device();
+    var audio_device = try getDefaultAudioOutputDevice();
     defer release(audio_device);
 
-    var audio_meter_info = try get_audio_meter_info(audio_device);
+    var audio_meter_info = try getAudioMeterInfo(audio_device);
     defer release(audio_meter_info);
-    var endpoint_volume = try get_endpoint_volume(audio_device);
+    var endpoint_volume = try getEndpointVolume(audio_device);
     defer release(endpoint_volume);
 
     // arbitrary buffer size - big enough for my devices :^)
     var name_buf: [64]u8 = undefined;
-    const name = try get_friendly_name(audio_device, &name_buf);
+    const name = try getFriendlyName(audio_device, &name_buf);
 
     // print name and hide cursor
     std.debug.print("{s}\n\n\x1b[?25l", .{name});
     defer std.debug.print("\x1b[?25h", .{});
 
     while (true) {
-        render_volume_bars(
-            try get_peak_volume(audio_meter_info),
-            try get_master_volume_scalar(endpoint_volume),
+        renderVolumeBars(
+            try getPeakVolume(audio_meter_info),
+            try getMasterVolumeScalar(endpoint_volume),
         );
         time.sleep(16 * time.ns_per_ms);
     }
