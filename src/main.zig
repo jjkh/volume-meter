@@ -1,7 +1,6 @@
 const std = @import("std");
 const time = std.time;
 const log = std.log;
-pub const log_level = log.Level.info;
 
 const win32 = @import("win32");
 const com = win32.system.com;
@@ -30,7 +29,6 @@ fn get_default_device() !*core_audio.IMMDevice {
         }
     }
     defer release(enumerator);
-    log.debug("enumerator: {s}\n", .{enumerator});
 
     var device: *core_audio.IMMDevice = undefined;
     {
@@ -45,7 +43,6 @@ fn get_default_device() !*core_audio.IMMDevice {
             return error.GetAudioEndpointFailed;
         }
     }
-    log.debug("default audio endpoint: {s}\n", .{device});
 
     return device;
 }
@@ -67,7 +64,6 @@ fn get_device_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
         }
     }
     defer release(properties);
-    log.debug("device props: {s}", .{properties});
 
     var prop_value: structured_storage.PROPVARIANT = undefined;
     {
@@ -78,7 +74,6 @@ fn get_device_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
         }
     }
     defer _ = structured_storage.PropVariantClear(&prop_value);
-    log.debug("prop value: {s}", .{prop_value});
 
     const wide_name = wide_string_z(prop_value.Anonymous.Anonymous.Anonymous.pwszVal);
     const name_len = try std.unicode.utf16leToUtf8(buf, wide_name);
@@ -100,8 +95,6 @@ fn get_audio_meter_info(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAud
             return error.Failed;
         }
     }
-    log.debug("audio meter information: {s}\n", .{audio_meter_info});
-
     return audio_meter_info;
 }
 
@@ -119,8 +112,6 @@ fn get_audio_endpoint_volume(audio_endpoint: *core_audio.IMMDevice) !*core_audio
             return error.Failed;
         }
     }
-    log.debug("audio volume endpoint: {s}\n", .{audio_endpoint_volume});
-
     return audio_endpoint_volume;
 }
 
@@ -133,8 +124,6 @@ fn get_peak_volume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
             return error.Failed;
         }
     }
-    log.debug("peak: {}\n", .{peak_volume});
-
     return peak_volume;
 }
 
@@ -147,8 +136,6 @@ fn get_master_volume_scalar(audio_endpoint_volume: *core_audio.IAudioEndpointVol
             return error.Failed;
         }
     }
-    log.debug("master volume scalar: {}", .{master_volume_scalar});
-
     return master_volume_scalar;
 }
 
