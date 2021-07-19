@@ -12,15 +12,15 @@ fn release(com_obj: anytype) void {
     _ = com_obj.IUnknown_Release();
 }
 
-fn get_default_device() !*core_audio.IMMDevice {
-    var enumerator: *core_audio.IMMDeviceEnumerator = undefined;
+fn get_default_audio_output_device() !*core_audio.IMMDevice {
+    var device_enumerator: *core_audio.IMMDeviceEnumerator = undefined;
     {
         const result = com.CoCreateInstance(
             core_audio.CLSID_MMDeviceEnumerator,
             null,
             com.CLSCTX_ALL,
             core_audio.IID_IMMDeviceEnumerator,
-            @ptrCast(**c_void, &enumerator),
+            @ptrCast(**c_void, &device_enumerator),
         );
 
         if (result < 0) {
@@ -28,11 +28,11 @@ fn get_default_device() !*core_audio.IMMDevice {
             return error.CoCreateInstanceFailed;
         }
     }
-    defer release(enumerator);
+    defer release(device_enumerator);
 
     var device: *core_audio.IMMDevice = undefined;
     {
-        const result = enumerator.IMMDeviceEnumerator_GetDefaultAudioEndpoint(
+        const result = device_enumerator.IMMDeviceEnumerator_GetDefaultAudioEndpoint(
             core_audio.EDataFlow.eRender,
             core_audio.ERole.eConsole,
             &device,
@@ -54,10 +54,10 @@ fn wide_string_z(wide_str: [*:0]u16) [:0]u16 {
     return wide_str[0..idx :0];
 }
 
-fn get_device_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
-    var properties: *win32.everything.IPropertyStore = undefined;
+fn get_friendly_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
+    var properties: *properties_system.IPropertyStore = undefined;
     {
-        const result = device.IMMDevice_OpenPropertyStore(win32.everything.STGM_READ, &properties);
+        const result = device.IMMDevice_OpenPropertyStore(structured_storage.STGM_READ, &properties);
         if (result < 0) {
             log.err("OpenPropertyStore FAILED: 0x{X:0>8}", .{result});
             return error.OpenPropertyStoreFailed;
@@ -67,7 +67,8 @@ fn get_device_name(device: *core_audio.IMMDevice, buf: []u8) ![]u8 {
 
     var prop_value: structured_storage.PROPVARIANT = undefined;
     {
-        const result = properties.IPropertyStore_GetValue(&win32.everything.DEVPKEY_Device_FriendlyName, &prop_value);
+        const device_friendly_name = win32.everything.DEVPKEY_Device_FriendlyName;
+        const result = properties.IPropertyStore_GetValue(&device_friendly_name, &prop_value);
         if (result < 0) {
             log.err("GetValue FAILED: 0x{X:0>8}", .{result});
             return error.GetValueFailed;
@@ -98,21 +99,21 @@ fn get_audio_meter_info(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAud
     return audio_meter_info;
 }
 
-fn get_audio_endpoint_volume(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioEndpointVolume {
-    var audio_endpoint_volume: *core_audio.IAudioEndpointVolume = undefined;
+fn get_endpoint_volume(audio_endpoint: *core_audio.IMMDevice) !*core_audio.IAudioEndpointVolume {
+    var endpoint_volume: *core_audio.IAudioEndpointVolume = undefined;
     {
         const result = audio_endpoint.IMMDevice_Activate(
             core_audio.IID_IAudioEndpointVolume,
             @enumToInt(com.CLSCTX_ALL),
             null,
-            @ptrCast(**c_void, &audio_endpoint_volume),
+            @ptrCast(**c_void, &endpoint_volume),
         );
         if (result < 0) {
             log.err("Activate FAILED: 0x{X:0>8}", .{result});
             return error.Failed;
         }
     }
-    return audio_endpoint_volume;
+    return endpoint_volume;
 }
 
 fn get_peak_volume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
@@ -127,10 +128,10 @@ fn get_peak_volume(audio_meter_info: *core_audio.IAudioMeterInformation) !f32 {
     return peak_volume;
 }
 
-fn get_master_volume_scalar(audio_endpoint_volume: *core_audio.IAudioEndpointVolume) !f32 {
+fn get_master_volume_scalar(endpoint_volume: *core_audio.IAudioEndpointVolume) !f32 {
     var master_volume_scalar: f32 = undefined;
     {
-        const result = audio_endpoint_volume.IAudioEndpointVolume_GetMasterVolumeLevelScalar(&master_volume_scalar);
+        const result = endpoint_volume.IAudioEndpointVolume_GetMasterVolumeLevelScalar(&master_volume_scalar);
         if (result < 0) {
             log.err("Activate FAILED: 0x{X:0>8}", .{result});
             return error.Failed;
@@ -158,24 +159,27 @@ pub fn main() !void {
     }
     defer com.CoUninitialize();
 
-    // get default device audio meter info
-    var default_device = try get_default_device();
-    defer release(default_device);
+    var audio_device = try get_default_audio_output_device();
+    defer release(audio_device);
 
-    var audio_meter_info = try get_audio_meter_info(default_device);
+    var audio_meter_info = try get_audio_meter_info(audio_device);
     defer release(audio_meter_info);
-    var audio_endpoint_volume = try get_audio_endpoint_volume(default_device);
-    defer release(audio_endpoint_volume);
+    var endpoint_volume = try get_endpoint_volume(audio_device);
+    defer release(endpoint_volume);
 
-    var name_buf = [_]u8{0} ** 64;
-    const name = try get_device_name(default_device, &name_buf);
+    // arbitrary buffer size - big enough for my devices :^)
+    var name_buf: [64]u8 = undefined;
+    const name = try get_friendly_name(audio_device, &name_buf);
 
     // print name and hide cursor
     std.debug.print("{s}\n\n\x1b[?25l", .{name});
     defer std.debug.print("\x1b[?25h", .{});
 
     while (true) {
-        render_volume_bars(try get_peak_volume(audio_meter_info), try get_master_volume_scalar(audio_endpoint_volume));
+        render_volume_bars(
+            try get_peak_volume(audio_meter_info),
+            try get_master_volume_scalar(endpoint_volume),
+        );
         time.sleep(16 * time.ns_per_ms);
     }
 }
