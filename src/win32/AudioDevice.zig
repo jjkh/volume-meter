@@ -3,6 +3,7 @@ friendly_name_buf: [128]u8 = undefined, // arbitrary buffer size
 // lazily load as required
 audio_meter_info: ?*core_audio.IAudioMeterInformation = null,
 endpoint_volume: ?*core_audio.IAudioEndpointVolume = null,
+simple_audio_volume: ?*core_audio.ISimpleAudioVolume = null,
 
 const AudioDevice = @This();
 const std = @import("std");
@@ -72,7 +73,7 @@ pub fn peakVolume(self: *AudioDevice) !f32 {
     return peak_volume;
 }
 
-pub fn masterVolumeScalar(self: *AudioDevice) !f32 {
+pub fn masterVolume(self: *AudioDevice) !f32 {
     const endpoint_volume = try self.endpointVolume();
 
     var master_volume_scalar: f32 = undefined;
@@ -82,6 +83,39 @@ pub fn masterVolumeScalar(self: *AudioDevice) !f32 {
     );
 
     return master_volume_scalar;
+}
+
+pub fn setMasterVolume(self: *AudioDevice, volume: f32) !void {
+    const endpoint_volume = try self.endpointVolume();
+    try checkResult(
+        "SetMasterVolumeLevelScalar",
+        endpoint_volume.IAudioEndpointVolume_SetMasterVolumeLevelScalar(volume, core_audio.CLSID_GUID_NULL),
+    );
+}
+
+pub fn isMuted(self: *AudioDevice) !bool {
+    const endpoint_volume = try self.endpointVolume();
+
+    var muted: i32 = undefined;
+    try checkResult("GetMute", endpoint_volume.IAudioEndpointVolume_GetMute(&muted));
+
+    return muted != 0;
+}
+
+pub fn setMute(self: *AudioDevice, to_mute: enum(i32) { Unmute = 0, Mute = 1 }) !void {
+    const endpoint_volume = try self.endpointVolume();
+    try checkResult("SetMute", endpoint_volume.IAudioEndpointVolume_SetMute(
+        @enumToInt(to_mute),
+        core_audio.CLSID_GUID_NULL,
+    ));
+}
+
+pub fn setApplicationVolume(self: *AudioDevice, volume: f32) !void {
+    const simple_audio_volume = try self.simpleAudioVolume();
+    try checkResult(
+        "SetMasterVolume",
+        simple_audio_volume.ISimpleAudioVolume_SetMasterVolume(volume, core_audio.CLSID_GUID_NULL),
+    );
 }
 
 // must be released by caller
@@ -133,4 +167,33 @@ fn endpointVolume(self: *AudioDevice) !*core_audio.IAudioEndpointVolume {
     );
 
     return self.endpoint_volume.?;
+}
+
+fn simpleAudioVolume(self: *AudioDevice) !*core_audio.ISimpleAudioVolume {
+    if (self.simple_audio_volume) |simple_audio_volume| return simple_audio_volume;
+
+    var audio_session_manager: *core_audio.IAudioSessionManager = undefined;
+    try checkResult(
+        "Activate",
+        self.device.IMMDevice_Activate(
+            core_audio.IID_IAudioSessionManager,
+            @enumToInt(com.CLSCTX.INPROC_SERVER),
+            null,
+            @ptrCast(**c_void, &audio_session_manager),
+        ),
+    );
+    defer release(audio_session_manager);
+
+    var simple_audio_volume: *core_audio.ISimpleAudioVolume = undefined;
+    try checkResult(
+        "GetSimpleAudioVolume",
+        audio_session_manager.IAudioSessionManager_GetSimpleAudioVolume(
+            null,
+            0,
+            &simple_audio_volume,
+        ),
+    );
+    self.simple_audio_volume = simple_audio_volume;
+
+    return simple_audio_volume;
 }

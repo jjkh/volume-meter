@@ -17,8 +17,14 @@ pub fn build(b: *std.build.Builder) !void {
     const mode = b.standardReleaseOptions();
     const exe = b.addExecutable("audio-monitor", "src/main.zig");
 
-    if (mode != .Debug)
-        exe.subsystem = .Windows;
+    const assets_dir = "assets/";
+    b.installDirectory(.{
+        .source_dir = assets_dir,
+        .install_subdir = assets_dir,
+        .install_dir = std.build.InstallDir.bin,
+    });
+
+    if (mode != .Debug) exe.subsystem = .Windows;
 
     exe.linkLibC();
     exe.setTarget(target);
