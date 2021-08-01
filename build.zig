@@ -15,8 +15,11 @@ pub fn build(b: *std.build.Builder) !void {
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
-
     const exe = b.addExecutable("audio-monitor", "src/main.zig");
+
+    if (mode != .Debug)
+        exe.subsystem = .Windows;
+
     exe.linkLibC();
     exe.setTarget(target);
     exe.setBuildMode(mode);
